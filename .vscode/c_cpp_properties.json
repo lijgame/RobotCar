@@ -17,6 +17,15 @@
             "compilerPath": "/usr/bin/clang",
             "cStandard": "c11",
             "cppStandard": "c++17"
+        },
+        {
+            "name": "Linux",
+            "includePath": [
+                "/home/lijiang/Arduino/libraries/ST_HW_HC_SR04/src"
+            ],
+            "forcedInclude": [
+                "/home/lijiang/.arduino15/packages/arduino/hardware/avr/1.6.23/cores/arduino/Arduino.h"
+            ]
         }
     ],
     "version": 4

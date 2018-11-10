@@ -1,5 +1,5 @@
 {
     "board": "arduino:avr:uno",
     "sketch": "RobotCar.ino",
-    "port": "/dev/cu.usbmodem1421"
+    "port": "/dev/ttyACM1"
 }
