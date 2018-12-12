@@ -117,14 +117,14 @@ void backward()  // back up
 void turnL()  // turning left(dual wheel)
 {
   CarState = 3;
-  // MotorL.backward();
+  MotorL.backward();
   MotorR.forward();
 }
 void turnR()  // turning right(dual wheel)
 {
   CarState = 4;
   MotorL.forward();
-  // MotorR.backward();
+  MotorR.backward();
 }
 void stop()  // stop
 {
@@ -208,6 +208,9 @@ void getDistance() {
 }
 void loop() {
   parseCMD();
+  getDistance();
+  if (distance > 0 && distance < 25 && command == CMD_Forward) stop();
+
   bool stateChanged = true;
   switch (command) {
     case CMD_Forward:
@@ -249,9 +252,7 @@ void loop() {
       stateChanged = false;
       break;
   }
-  getDistance();
-  if (distance > 0 && distance < 25 && CarState != 5 && command != CMD_Forward)
-    stop();
+
   show_state();
   // delay(20);
 }
