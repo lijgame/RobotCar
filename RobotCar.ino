@@ -13,7 +13,7 @@
 #define MotorIN2_L 8
 #define MotorIN1_R 2
 #define MotorIN2_R 4
-unsigned short Speed = 250;
+unsigned short Speed = 150;
 L298N MotorL(MotorPWM_L, MotorIN2_L, MotorIN1_L);
 L298N MotorR(MotorPWM_R, MotorIN2_R, MotorIN1_R);
 
@@ -48,7 +48,7 @@ decode_results results;           // cache of decode of IR remoter control
 #define IR_Speed_UP 0x00ffb04f    // increasing speed
 #define IR_Speed_DOWN 0x00ff30cf  // decreasing speed
 #define IR_XunJi_Mode 0x00ff18e7
-#define IR_Self_Control 0x00ff7a85  // ultrasonic distance detecting
+#define IR_Self_Control 0x00ff7a85  // Auto drive
 #define IR_IR_Control 0x00ff10ef
 #define IR_Bluetooth_Control 0x00ff38c7
 #define IR_ESC 0x00ff52ad  // quitting from remote control
@@ -59,8 +59,8 @@ short angle = 90;
 float distance = 25;
 
 // turn time
-#define delay_time 1000
-#define turnTime 500
+#define delay_time 500
+#define turnTime 400
 
 //
 bool bAutoDrive;
@@ -126,14 +126,19 @@ void backward()  // back up
 void turnL()  // turning left(dual wheel)
 {
   CarState = 3;
+
+  setSpeed(250, 250);
   MotorL.backward();
   MotorR.forward();
+  setSpeed(Speed, Speed);
 }
 void turnR()  // turning right(dual wheel)
 {
   CarState = 4;
+  setSpeed(250, 250);
   MotorL.forward();
   MotorR.backward();
+  setSpeed(Speed, Speed);
 }
 void stop()  // stop
 {
@@ -166,65 +171,75 @@ void setup() {
   servo.write(angle);
   // time out 23200 23.2 ms for about 4 meters
   // 5800 us about 1 meter
-  ultrasonicSensor.setTimeout(11600);
+  ultrasonicSensor.setTimeout(23200);
 
-  bAutoDrive = true;
+  bAutoDrive = false;
 }
 void parseCMD() {
   command = NO_COMMAND;
   if (Serial.available()) {
     command = Serial.read();
-    return;
   }
-  if (irrecv.decode(&results)) {
-    switch (results.value) {
-      case IR_Go:
-        command = CMD_Forward;
-        break;
-      case IR_Back:
-        command = CMD_Backward;
-        break;
-      case IR_Left:
-        command = CMD_TurnLeft;
-        break;
-      case IR_Right:
-        command = CMD_TurnRight;
-        break;
-      case IR_Stop:
-        command = CMD_Stop;
-        break;
-      case IR_Speed_UP:
-        command = CMD_SpeedUp;
-        break;
-      case IR_Speed_DOWN:
-        command = CMD_SpeedDown;
-        break;
-      case IR_Servo_L:
-        command = CMD_ServoLeft;
-        break;
-      case IR_Servo_R:
-        command = CMD_ServoRight;
-        break;
-      default:
-        break;
+  {
+    if (irrecv.decode(&results)) {
+      switch (results.value) {
+        case IR_Go:
+          command = CMD_Forward;
+          break;
+        case IR_Back:
+          command = CMD_Backward;
+          break;
+        case IR_Left:
+          command = CMD_TurnLeft;
+          break;
+        case IR_Right:
+          command = CMD_TurnRight;
+          break;
+        case IR_Stop:
+          command = CMD_Stop;
+          break;
+        case IR_Speed_UP:
+          command = CMD_SpeedUp;
+          break;
+        case IR_Speed_DOWN:
+          command = CMD_SpeedDown;
+          break;
+        case IR_Servo_L:
+          command = CMD_ServoLeft;
+          break;
+        case IR_Servo_R:
+          command = CMD_ServoRight;
+          break;
+        case IR_Self_Control:
+          command = CMD_AutoDrive;
+          break;
+        default:
+          break;
+      }
+      irrecv.resume();
     }
-    irrecv.resume();
   }
+  if (command == CMD_AutoDrive)
+    bAutoDrive = true;
+  else if (command != NO_COMMAND)
+    bAutoDrive = false;
 }
 void getDistance() {
   int t = ultrasonicSensor.getHitTime();
   // speed of sound at 28 degree is about 34.7 cm/ms
-  distance = t / 29.0f;
+  if (t == 0)
+    distance = 100;
+  else
+    distance = t / 29.0f;
 }
 void getDistanceAt(int angle) {
   servo.write(angle);
-  delay(500);
+  delay(50);
   getDistance();
-  delay(100);
 }
 
 void auto_drive() {
-  setSpeed(150, 150);
+  // setSpeed(200, 200);
 
   // check front distance
   getDistanceAt(90);
@@ -240,10 +255,10 @@ void auto_drive() {
     }
     stop();
     delay(200);
-    getDistanceAt(0);  // check left
+    getDistanceAt(180);  // check left
     delay(delay_time);
     float leftD = distance;
-    getDistanceAt(180);  // check right
+    getDistanceAt(0);  // check right
     delay(delay_time);
     servo.write(90);  // look front
     float rightD = distance;
@@ -253,20 +268,19 @@ void auto_drive() {
       turnR();
     show_state();
     delay(turnTime);
-
+    stop();
   } else
     forward();
 }
 
 void loop() {
   parseCMD();
-  if (bAutoDrive && command == NO_COMMAND)
+  if (bAutoDrive)
     auto_drive();
   else {
     getDistance();
     if (distance > 0 && distance < 25 && CarState == 1) stop();
 
-    bool stateChanged = true;
     switch (command) {
       case CMD_Forward:
         forward();
@@ -304,7 +318,6 @@ void loop() {
         servo.write(angle);
         break;
       default:
-        stateChanged = false;
         break;
     }
   }
