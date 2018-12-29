@@ -1,0 +1,1 @@
+run 'npm install' after git clone
