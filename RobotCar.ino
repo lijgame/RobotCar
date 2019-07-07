@@ -1,9 +1,9 @@
 #include <ST_HW_HC_SR04.h>
 
-#include <IRremote.h>  //including libraries of remote control
 #include <L298N.h>
 #include <LiquidCrystal_I2C.h>
-#include <Servo.h>  // servo
+#include <PS2X_lib.h>  //for v1.6
+#include <Servo.h>     // servo
 #include <Wire.h>
 
 // pin to for motors,
@@ -32,26 +32,19 @@ L298N MotorR(MotorPWM_R, MotorIN2_R, MotorIN1_R);
 unsigned char command = NO_COMMAND;
 
 // LCD
-LiquidCrystal_I2C lcd(0x27, 16, 2);
+// LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-// IR Remote
-#define RECV_PIN 12               // pin 12 of IR remoter control receiver
-IRrecv irrecv(RECV_PIN);          // defining pin 12 of IR remoter control
-decode_results results;           // cache of decode of IR remoter control
-#define IR_Go 0x00ff629d          // going forward
-#define IR_Back 0x00ffa857        // going backward
-#define IR_Left 0x00ff22dd        // turning left
-#define IR_Right 0x00ffc23d       // turning right
-#define IR_Stop 0x00ff02fd        // stop
-#define IR_Servo_L 0x00ff6897     // motor turning left
-#define IR_Servo_R 0x00ff9867     // motor turning right
-#define IR_Speed_UP 0x00ffb04f    // increasing speed
-#define IR_Speed_DOWN 0x00ff30cf  // decreasing speed
-#define IR_XunJi_Mode 0x00ff18e7
-#define IR_Self_Control 0x00ff7a85  // Auto drive
-#define IR_IR_Control 0x00ff10ef
-#define IR_Bluetooth_Control 0x00ff38c7
-#define IR_ESC 0x00ff52ad  // quitting from remote control
+// PS2 controller
+#define pressures true
+#define rumble true
+PS2X ps2x;          // create PS2 Controller Class
+#define PS2_DAT A3  // 14
+#define PS2_CMD A2  // 15
+#define PS2_SEL A4  // 16
+#define PS2_CLK A1  // 17
+int error = 0;
+byte type = 0;
+byte vibrate = 0;
 
 // servo
 Servo servo;
@@ -66,9 +59,35 @@ float distance = 25;
 bool bAutoDrive;
 
 // A1 trigger A0 Echo
-ST_HW_HC_SR04 ultrasonicSensor(A1, A0);
+// ST_HW_HC_SR04 ultrasonicSensor(40, 40);
 // state, 1 go 2 back 3 left 4 right 5 stop
 unsigned char CarState = 5;
+void show_sstates(void) {
+  //  Serial.print("speed: ");
+  //  Serial.print(Speed,DEC);
+  //  Serial.print(" Angle: ");
+  //  Serial.print(angle,DEC);
+  switch (CarState) {
+    case 1:
+      Serial.println(" Go  ");
+      break;
+    case 2:
+      Serial.println("Back ");
+      break;
+    case 3:
+      Serial.println("Left ");
+      break;
+    case 4:
+      Serial.println("Right");
+      break;
+    case 5:
+      Serial.println("Stop ");
+      break;
+    default:
+      break;
+  }
+}
+/*
 void show_state(void) {
   lcd.setCursor(0, 0);
   lcd.print("Spd        ");
@@ -105,6 +124,7 @@ void show_state(void) {
   lcd.setCursor(11, 1);
   lcd.print(distance, 1);
 }
+*/
 void setSpeed(unsigned char Left,
               unsigned char Right)  // function of setting speed
 {
@@ -148,180 +168,143 @@ void stop()  // stop
 }
 
 void setup() {
-  // init lcd
-  lcd.init();
-  delay(10);
-  lcd.backlight();
-  lcd.clear();
+  /*
+   // init lcd
+   lcd.init();
+   delay(10);
+   lcd.backlight();
+   lcd.clear();
+   lcd.setCursor(0, 0);
+   lcd.print("Robot Car");
+ */
 
   // Serial communication
-  Serial.begin(9600);
+  Serial.begin(57600);
 
   // init car state
   setSpeed(Speed, Speed);
   stop();
-  lcd.setCursor(0, 0);
-  lcd.print("Robot Car");
 
-  // init IR Remote
-  irrecv.enableIRIn();
+  //  // set up servo
+  //  servo.attach(9);
+  //  servo.write(angle);
+  //  // time out 23200 23.2 ms for about 4 meters
+  //  // 5800 us about 1 meter
+  //  ultrasonicSensor.setTimeout(23200);
 
-  // set up servo
-  servo.attach(9);
-  servo.write(angle);
-  // time out 23200 23.2 ms for about 4 meters
-  // 5800 us about 1 meter
-  ultrasonicSensor.setTimeout(23200);
-
-  bAutoDrive = false;
-}
-void parseCMD() {
-  command = NO_COMMAND;
-  if (Serial.available()) {
-    command = Serial.read();
-  }
-  {
-    if (irrecv.decode(&results)) {
-      switch (results.value) {
-        case IR_Go:
-          command = CMD_Forward;
-          break;
-        case IR_Back:
-          command = CMD_Backward;
-          break;
-        case IR_Left:
-          command = CMD_TurnLeft;
-          break;
-        case IR_Right:
-          command = CMD_TurnRight;
-          break;
-        case IR_Stop:
-          command = CMD_Stop;
-          break;
-        case IR_Speed_UP:
-          command = CMD_SpeedUp;
-          break;
-        case IR_Speed_DOWN:
-          command = CMD_SpeedDown;
-          break;
-        case IR_Servo_L:
-          command = CMD_ServoLeft;
-          break;
-        case IR_Servo_R:
-          command = CMD_ServoRight;
-          break;
-        case IR_Self_Control:
-          command = CMD_AutoDrive;
-          break;
-        default:
-          break;
-      }
-      irrecv.resume();
-    }
-  }
-  if (command == CMD_AutoDrive)
-    bAutoDrive = true;
-  else if (command != NO_COMMAND)
-    bAutoDrive = false;
-}
-void getDistance() {
-  int t = ultrasonicSensor.getHitTime();
-  // speed of sound at 28 degree is about 34.7 cm/ms
-  if (t == 0)
-    distance = 100;
-  else
-    distance = t / 29.0f;
-}
-void getDistanceAt(int angle) {
-  servo.write(angle);
-  delay(50);
-  getDistance();
-}
-
-void auto_drive() {
-  // setSpeed(200, 200);
-
-  // check front distance
-  getDistanceAt(90);
-
-  if (distance < 40) {
-    // too close, backward a bit
-    if (distance < 20) {
-      stop();
-      delay(300);
-      backward();
-      show_state();
-      delay(500);
-    }
-    stop();
-    delay(200);
-    getDistanceAt(180);  // check left
-    delay(delay_time);
-    float leftD = distance;
-    getDistanceAt(0);  // check right
-    delay(delay_time);
-    servo.write(90);  // look front
-    float rightD = distance;
-    if (leftD > rightD)
-      turnL();
+  error = ps2x.config_gamepad(PS2_CLK, PS2_CMD, PS2_SEL, PS2_DAT, pressures,
+                              rumble);
+  if (error == 0) {
+    Serial.print("Found Controller, configured successful ");
+    Serial.print("pressures = ");
+    if (pressures)
+      Serial.println("true ");
     else
-      turnR();
-    show_state();
-    delay(turnTime);
-    stop();
-  } else
+      Serial.println("false");
+    Serial.print("rumble = ");
+    if (rumble)
+      Serial.println("true)");
+    else
+      Serial.println("false");
+    Serial.println(
+        "Try out all the buttons, X will vibrate the controller, faster as you "
+        "press harder;");
+    Serial.println("holding L1 or R1 will print out the analog stick values.");
+    Serial.println(
+        "Note: Go to www.billporter.info for updates and to report bugs.");
+  } else if (error == 1)
+    Serial.println(
+        "No controller found, check wiring, see readme.txt to enable debug. "
+        "visit www.billporter.info for troubleshooting tips");
+
+  else if (error == 2)
+    Serial.println(
+        "Controller found but not accepting commands. see readme.txt to enable "
+        "debug. Visit www.billporter.info for troubleshooting tips");
+
+  else if (error == 3)
+    Serial.println(
+        "Controller refusing to enter Pressures mode, may not support it. ");
+
+  //  Serial.print(ps2x.Analog(1), HEX);
+
+  type = ps2x.readType();
+  switch (type) {
+    case 0:
+      Serial.print("Unknown Controller type found ");
+      break;
+    case 1:
+      Serial.print("DualShock Controller found ");
+      break;
+    case 2:
+      Serial.print("GuitarHero Controller found ");
+      break;
+    case 3:
+      Serial.print("Wireless Sony DualShock Controller found ");
+      break;
+  }
+}
+void PS2CMD() {
+  /* You must Read Gamepad to get new values and set vibration values
+     ps2x.read_gamepad(small motor on/off, larger motor strenght from 0-255)
+     if you don't enable the rumble, use ps2x.read_gamepad(); with no values
+     You should call this at least once a second
+   */
+  if (error == 1)  // skip loop if no controller found
+    return;
+
+  // DualShock Controller
+  ps2x.read_gamepad(false, vibrate);  // read controller and set large motor
+                                      // to spin at 'vibrate' speed
+
+  if (ps2x.Button(PSB_START))  // will be TRUE as long as button is pressed
+    Serial.println("Start is being held");
+  if (ps2x.Button(PSB_SELECT)) Serial.println("Select is being held");
+
+  // will be TRUE as long as button is pressed
+  bool bstop = true;
+  if (ps2x.Button(PSB_PAD_UP)) {
+    Serial.print("Up held this hard: ");
+    Serial.println(ps2x.Analog(PSAB_PAD_UP), DEC);
     forward();
+    bstop = false;
+  }
+  if (ps2x.Button(PSB_PAD_RIGHT)) {
+    Serial.print("Right held this hard: ");
+    Serial.println(ps2x.Analog(PSAB_PAD_RIGHT), DEC);
+    turnR();
+    bstop = false;
+  }
+  if (ps2x.Button(PSB_PAD_LEFT)) {
+    Serial.print("LEFT held this hard: ");
+    Serial.println(ps2x.Analog(PSAB_PAD_LEFT), DEC);
+    turnL();
+    bstop = false;
+  }
+  if (ps2x.Button(PSB_PAD_DOWN)) {
+    Serial.print("DOWN held this hard: ");
+    Serial.println(ps2x.Analog(PSAB_PAD_DOWN), DEC);
+    backward();
+    bstop = false;
+  }
+
+  if (bstop) stop();
+
+  // print stick values if either is TRUE
+  if (ps2x.Button(PSB_L1) || ps2x.Button(PSB_R1)) {
+    Serial.print("Stick Values:");
+    // Left stick, Y axis. Other options: LX, RY, RX
+    Serial.print(ps2x.Analog(PSS_LY), DEC);
+    Serial.print(",");
+    Serial.print(ps2x.Analog(PSS_LX), DEC);
+    Serial.print(",");
+    Serial.print(ps2x.Analog(PSS_RY), DEC);
+    Serial.print(",");
+    Serial.println(ps2x.Analog(PSS_RX), DEC);
+  }
 }
 
 void loop() {
-  parseCMD();
-  if (bAutoDrive)
-    auto_drive();
-  else {
-    getDistance();
-    if (distance > 0 && distance < 25 && CarState == 1) stop();
-
-    switch (command) {
-      case CMD_Forward:
-        forward();
-        break;
-      case CMD_Backward:
-        backward();
-        break;
-      case CMD_TurnLeft:
-        turnL();
-        break;
-      case CMD_TurnRight:
-        turnR();
-        break;
-      case CMD_Stop:
-        stop();
-        break;
-      case CMD_SpeedUp:
-        Speed += 5;
-        if (Speed > 255) Speed = 255;
-        setSpeed(Speed, Speed);
-        break;
-      case CMD_SpeedDown:
-        Speed -= 5;
-        if (Speed < 5) Speed = 5;
-        setSpeed(Speed, Speed);
-        break;
-      case CMD_ServoLeft:
-        ++angle;
-        if (angle > 180) angle = 180;
-        servo.write(angle);
-        break;
-      case CMD_ServoRight:
-        --angle;
-        if (angle < 0) angle = 0;
-        servo.write(angle);
-        break;
-      default:
-        break;
-    }
-  }
-
-  show_state();
-  // delay(20);
+  PS2CMD();
+  delay(20);
 }
